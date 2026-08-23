@@ -1,0 +1,16 @@
+# Exclude specific file extensions
+*.json
+*.md
+
+# Python virtual environment
+venv/
+
+# Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Operating system files
+.DS_Store
+Thumbs.db

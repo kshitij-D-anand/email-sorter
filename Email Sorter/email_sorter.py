@@ -5,6 +5,7 @@ import base64
 from functools import lru_cache
 
 from google import genai
+from google.genai import types
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -13,6 +14,9 @@ from googleapiclient.discovery import build
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
 CLIENT_SECRET_FILE = 'credentials.json'
+
+with open('system_instruction.md') as instructions_file:
+    SYSTEM_INSTRUCTIONS = instructions_file.read()
 
 with open('labels.json', 'r') as label_file: 
     LABELS = json.load(label_file)
@@ -145,8 +149,6 @@ def process_threads(threads_list):
 
     return unprocessed_threads, thread_label_map
 
-
-
 def get_processed_msgs(unprocessed_threads):
     processed_messages = []
 
@@ -189,10 +191,79 @@ def apply_thread_labels(thread_label_map):
 
     print("All thread updates successfully executed!")
 
+def classify_messages_with_gemini(processed_msgs, batch_size=20):
+    if not processed_msgs:
+        print('No messages to send to Gemini')
+        return {}
+
+    client = genai.Client()
+    gemini_thread_map = {}
+
+    for i in range(0, len(processed_msgs), batch_size):
+        chunk = processed_msgs[i:i + batch_size]
+        print(f"Processing batch {i // batch_size + 1} ({len(chunk)} emails)...")
+
+        prompt = json.dumps(chunk, indent=2)
+
+        try:
+            response = client.models.generate_content(
+                model='gemini-3.6-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTIONS,
+                    temperature=0.1
+                )
+            )
+
+            raw_output = response.text.strip()
+
+        except Exception as e:
+            print(f"Error processing batch {i // batch_size + 1}: {e}")
+            continue
+
+        #delete
+        # subject_lookup = {
+        #         item['threadId']: item['message'].get('subject', 'No Subject')
+        #         for item in chunk
+        #     }
+        #till here
+
+        for line in raw_output.splitlines():
+            line = line.strip()
+            if not line or not line.startswith('#'):
+                continue
+
+            parts = line.lstrip('#').split(':', 1)
+            if len(parts) != 2:
+                continue
+
+            thread_id = parts[0].strip()
+            label_name = parts[1].strip()
+            # subject = subject_lookup.get(thread_id, "No Subject") #delete this 
+
+            if label_name in LABELS:
+                label_id = LABELS[label_name]
+                gemini_thread_map[thread_id] = label_id
+                print(f"  [Matched] {thread_id} -> {label_name} ({label_id})")
+                # print(f"  [Matched] Subject: '{subject}' -> {label_name}")
+            elif label_name == "Uncategorized":
+                print(f"  [Uncategorized] {thread_id} left in Inbox.")
+                # print(f"  [Uncategorized] Subject: '{subject}'")
+            else:
+                print(f"  [Skipped] {thread_id} returned unknown label: '{label_name}'")
+                # print(f"  [Unknown Label] Subject: '{subject}' returned '{label_name}'")
+
+    return gemini_thread_map
+
+
 def main():
     threads_list = get_threads()
     unprocessed_threads, thread_label_map = process_threads(threads_list)
     processed_msgs = get_processed_msgs(unprocessed_threads)
+
+    gemini_thread_map = classify_messages_with_gemini(processed_msgs)
+
+    thread_label_map.update(gemini_thread_map)
 
     apply_thread_labels(thread_label_map)
 

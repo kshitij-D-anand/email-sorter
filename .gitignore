@@ -1,15 +1,24 @@
 # Exclude specific file extensions
 *.json
-*.md
 
 # Python virtual environment
 venv/
+.venv/
+env/
+ENV/
 
 # Python cache and compiled files
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# Core prompts and builder scripts
+system_instruction.md
+export_label_emails.py
+
+# Exported messages folder
+Labels/
 
 # Operating system files
 .DS_Store

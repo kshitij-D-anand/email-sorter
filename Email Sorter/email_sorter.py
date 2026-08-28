@@ -13,6 +13,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
 CLIENT_SECRET_FILE = 'credentials.json'
@@ -204,14 +205,20 @@ def apply_thread_labels(thread_label_map):
         human_name = LABEL_ID_TO_NAME.get(label_id, label_id) # Just for visual queue / testing
         print(f"Applying label '{human_name}' to thread {thread_id}...")
 
-        service().users().threads().modify(
-            userId='me',
-            id=thread_id,
-            body={
-                'addLabelIds': [label_id],
-                'removeLabelIds': ['INBOX']
-            }
-        ).execute()
+        try:
+            service().users().threads().modify(
+                userId='me',
+                id=thread_id,
+                body={
+                    'addLabelIds': [label_id],
+                    'removeLabelIds': ['INBOX']
+                }
+            ).execute()
+        except HttpError as error:
+            if error.resp.status == 404:
+                print(f"[Skipped] Thread {thread_id} not found (invalid thread ID or deleted email).")
+            else:
+                print(f"[Error] Failed to update thread {thread_id}: {error}")
 
     print("All thread updates successfully executed!")
 
